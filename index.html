@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="ISO-8859-1">
+	<title>twitter scanner</title>
+	<script type="text/javascript" src="shared.js" charset="utf-8"></script>
+	<script type="text/javascript">
+
+		function dropHandler(ev) {
+			console.log('File(s) dropped');
+
+			let file = null;
+
+			// Prevent default behavior (Prevent file from being opened)
+			ev.preventDefault();
+
+			if (ev.dataTransfer.items) {
+				if (ev.dataTransfer.items[0].kind === 'file') {
+						file = ev.dataTransfer.items[0].getAsFile();
+				}
+			} else {
+				// Use DataTransfer interface to access the file(s)
+				for (var i = 0; i < ev.dataTransfer.files.length; i++) {
+					console.log('... file[' + i + '].name = ' + ev.dataTransfer.files[i].name);
+				}
+			} 
+
+			if (file) {
+				var reader = new FileReader();
+		        reader.onload = function(event) {
+		            readWithFile(event.target.result);
+		            delete reader;
+		        };
+
+		        reader.readAsText(file);
+			}
+
+		}
+
+		function dragOverHandler(ev) {
+			// Prevent default behavior (Prevent file from being opened)
+			ev.preventDefault();
+		}
+
+		function readWithFile(contents) {
+			worker = new Worker('worker.js?' + getRandomInt(0, 10000000));
+
+			worker.onmessage = function(e) {
+				let data = e.data;
+				if (data.isUpdate) {
+					let progress = (data.progress * 100).toPrecision(4);
+					document.getElementById("progress").style.width = progress + "%"; 
+				}
+				else {
+					loadData(data);
+				}
+			}
+			setUIMode("load");
+			document.getElementById("progress").style.width = "0%"; 
+			worker.postMessage(contents);
+		}
+
+		function loadData(data) {
+			info = data;
+			setUIMode("run");
+			worker.terminate();
+			delete worker;
+		}
+
+		function displayTweets(tweets) {
+			let buffer = "";
+			for (var i = 0; i < tweets.length; i++) {
+				let tweet = tweets[i];
+				let numFavs = parseInt(tweet.favorite_count);
+				let numRTs = parseInt(tweet.retweet_count);
+				let link = "https://twitter.com/statuses/" + tweet.id_str;
+				let checked = getFlag(tweet.id_str) ? "checked" : "";
+				buffer += `<tr><td>${tweet.expandedTweet}</td>
+				<td>${tweet.created_at}</td>
+				<td>${numFavs}</td>
+				<td>${numRTs}</td>
+				<td><a href="${link}">permalink</a>
+				<td><input type="checkbox" ${checked} onchange="toggleFlag('${tweet.id_str}')" ></td></tr>\n`;
+			}
+
+			displayedTweets = tweets;
+			document.getElementById("tweets").innerHTML = "<table>" + buffer + "</table>" ;
+		}
+
+		function displayTweetIds(ids) {
+			let tweets = [];
+			for (var i = 0; i < ids.length; i++) {
+				let tweet = getTweet(ids[i]);
+				if (tweet) {
+					tweets.push(tweet);
+				}
+				
+			}
+
+			displayTweets(tweets);
+		}
+
+		function getTweet(id) {
+			return info.byId[id];
+		}
+
+		function toggleFlag(id) {
+			setFlag(id, !getFlag(id));
+		}
+
+		function findLocations(substring,string){
+		  var a=[],i=-1;
+		  while((i=string.indexOf(substring,i+1)) >= 0) a.push(i);
+		  return a;
+		}
+
+		function tweetIDsWithKey(key) {
+			if (!key || key.length < 1) {
+				return [];
+			}
+
+			if (key.indexOf("is:") == 0) {
+				let type = key.split(":")[1];
+				switch (type) {
+					case "flagged":
+					case "flag":
+						let keys = Object.keys(flaggedTweets);
+						let ids = keys.filter(key => getFlag(key) == true);
+						return ids;
+					break;
+				}
+			}
+
+			let lowerKey = key.toLowerCase();
+
+			let locations = findLocations(lowerKey, info.searchText);
+
+			let ids = locations.map(function (location) {
+				let i = location;
+				while (i >= 0) {
+					let id = info.searchIndex[i];
+					if (id) {
+						return id;
+					}
+					i--;
+				}
+				return null;
+			});
+
+			ids = Array.from(new Set(ids));
+
+			return ids;
+		}
+
+		function search() {
+			let value = document.getElementById("searchField").value;
+			let splits = value.split(" ");
+
+			let allIds = [];
+			splits.forEach((part) => {
+				if (isValidKey(part)) {
+					allIds.push(tweetIDsWithKey(part))
+				}
+			});
+			let ids = [];
+			if (allIds.length > 0) {
+				ids = allIds[0];
+			}
+			 
+			for (var i = 0; i < allIds.length; i++) {
+				ids = ids.filter(id => allIds[i].indexOf(id) != -1);
+			}
+
+			ids.sort(function(a,b) {
+				if (a.length != b.length) {
+					return a.length - b.length;
+				}
+				return a.localeCompare(b);
+
+			});
+
+			displayTweetIds(ids);
+		}
+
+		function setUIMode(mode) {
+			document.getElementById("all").className = mode;
+		}
+
+		function saveFlaggedTweets() {
+			if (localStorage) {
+				localStorage.setItem('flaggedTweets', JSON.stringify(flaggedTweets));
+			}
+		}
+
+		function getFlag(id) {
+			return !!flaggedTweets[id];
+		}
+
+		function setFlag(id, value, save=true) {
+			if (value) {
+				flaggedTweets[id] = true;
+			}
+			else {
+				delete flaggedTweets[id];
+			}
+			if (save) {
+				saveFlaggedTweets();
+			}
+		} 
+
+		function flagAll(value) {
+			for (var i = 0; i < displayedTweets.length; i++) {
+				let id = displayedTweets[i].id_str;
+				setFlag(id, value, false);
+			}
+			saveFlaggedTweets();
+			displayTweets(displayedTweets);
+		}
+
+		let worker = null;
+		var info = makeInfoObject();
+		let displayedTweets = [];
+		let flaggedTweets = {};
+
+		if (localStorage && localStorage.getItem('flaggedTweets')) {
+			let storedFlag = JSON.parse(localStorage.getItem('flaggedTweets'));
+			if (storedFlag) {
+				flaggedTweets = storedFlag;
+			}
+		}
+
+
+	</script>
+<link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+	<div id="all" class="start">
+		<div id="explain">
+			<ol>
+        <li> Get your <a href="https://twitter.com/settings/your_twitter_data">data archive from twitter</a><br/></li>
+        <li> Unzip the archive</li>
+        <li> Drag and drop tweet.js into this window</li>
+			</ol>
+		</div>
+		<div id="loading">
+			Loading...
+			<div id="progressBar">
+				<div id="progress" style="width: 0%;"></div>
+			</div>
+		</div>
+		<div id="UI">
+			<input type="text" id="searchField" oninput="search();"><br/>
+			<a href="#" onclick="flagAll(true);">Check All</a> <a href="#" onclick="flagAll(false);">Uncheck All</a>
+			<div id="tweets">
+		</div>
+	</div>
+	</div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+/* CSS files add styling rules to your content */
+
+html {
+  height: 100%;
+}
+body {
+  min-height: 100%;
+  margin:0px;
+  padding:0px;
+}
+
+#all {
+  padding:10px;
+}
+
+.start #explain, .load #loading, .run #UI {
+  display: block;
+}
+
+.start #UI, .load #UI, .start #loading, .run #loading, .load #explain, .run #explain {
+  display: none;
+}
+
+#progressBar {
+  width: 400px;
+  height: 25px;
+  border: 1px solid black;
+}
+
+#progress {
+  height: 100%;
+  background: blue;
+}
+
+#searchField {
+  line-height: 1.5em;
+  padding: 0.5em;
+  font-size: 24px;
+  border-radius: 2em;
+  width:24em;
+  display:block;
+}
